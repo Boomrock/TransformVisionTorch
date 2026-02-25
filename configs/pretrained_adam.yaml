@@ -1,0 +1,38 @@
+# эксперимент 1a состоит из комбинации Pretrained ViT + Adam
+# проведен fine tuning предобученного ViT-B/16 на Stanford Dogs с MixUp
+# оптимизатор — стандартный AdamW
+# Запуск по команде python src/train.py --config configs/pretrained_adam.yaml
+seed: 42
+
+data:
+  root: "./data"
+  splits_dir: "./data/splits"
+  image_size: 224
+  batch_size: 32
+  num_workers: 4
+  num_classes: 120
+
+model:
+  name: "vit_base_patch16_224"
+  pretrained: true
+
+mixup:
+  alpha: 0.8
+  cutmix_alpha: 0.0
+  prob: 1.0
+
+optimizer:
+  name: "adam"
+  lr: 1.0e-4            # Низкий learning rate для fine-tuning
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+
+scheduler:
+  name: "cosine"
+  T_max: 30              # epochs
+  eta_min: 1.0e-6
+
+training:
+  epochs: 30
+  experiment_dir: "./experiments/pretrained_adam"

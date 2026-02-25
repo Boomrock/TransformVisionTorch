@@ -1,0 +1,31 @@
+# Data
+data/Images/
+data/images.tar
+data/*.tar
+
+# Checkpoints (keep metrics.json)
+experiments/*/checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Virtual env
+venv/
+.venv/
+env/

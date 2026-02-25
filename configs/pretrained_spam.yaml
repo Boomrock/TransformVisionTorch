@@ -1,0 +1,39 @@
+seed: 42
+
+data:
+  root: "./data"
+  splits_dir: "./data/splits"
+  image_size: 224
+  batch_size: 32
+  num_workers: 4
+  num_classes: 120
+
+model:
+  name: "vit_base_patch16_224"
+  pretrained: true
+
+mixup:
+  alpha: 0.8
+  cutmix_alpha: 0.0
+  prob: 1.0
+
+optimizer:
+  name: "spam"
+  lr: 1.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1.0e-6
+  # SPAM-specs:
+  spam_warmup_steps: 150     # Cosine warmup after momentum reset
+  spam_threshold: 5000       # Spike detection multiplier
+  spam_delta_t: 500          # Momentum reset period (steps)
+  spam_grad_accu_steps: 20   # Steps before spike clipping activates
+
+scheduler:
+  name: "cosine"
+  T_max: 30
+  eta_min: 1.0e-6
+
+training:
+  epochs: 30
+  experiment_dir: "./experiments/pretrained_spam"
