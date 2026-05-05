@@ -12,20 +12,22 @@ embedding:
   model_name: "all-MiniLM-L6-v2"
   batch_size: 256
   max_seq_length: 256
-  embedding_dim: 128
+  embedding_dim: 384
 
 model:
   d_model: 384
-  nhead: 4
+  nhead: 8
   num_encoder_layers: 2
   dim_feedforward: 256
-  dropout: 0.2
+  dropout: 0.4
   max_seq_len: 15
 
 training:
-  batch_size: 16
-  epochs: 30
-  learning_rate: 0.003
+  batch_size: 32
+  epochs: 50
+  learning_rate: 0.001
   weight_decay: 0.01
   warmup_steps: 500
   patience: 200
+  class_weighting: "sqrt_inverse_frequency"
+  checkpoint_metric: "f1_macro"

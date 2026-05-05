@@ -1,0 +1,10 @@
+                    precision    recall  f1-score   support
+
+ Individual Sports       0.76      0.80      0.78       620
+Outdoor Recreation       0.86      0.87      0.87      1328
+  Personal Fitness       0.83      0.59      0.69        59
+       Team Sports       0.77      0.70      0.73       390
+
+          accuracy                           0.82      2397
+         macro avg       0.80      0.74      0.77      2397
+      weighted avg       0.82      0.82      0.82      2397

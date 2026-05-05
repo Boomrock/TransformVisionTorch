@@ -10,10 +10,10 @@ from sklearn.metrics import (
 def compute_metrics(y_true, y_pred, y_prob=None, k=3):
     metrics = {
         "accuracy": accuracy_score(y_true, y_pred),
-        "f1_macro": f1_score(y_true, y_pred, average="macro"),
-        "f1_weighted": f1_score(y_true, y_pred, average="weighted"),
-        "precision_macro": precision_score(y_true, y_pred, average="macro"),
-        "recall_macro": recall_score(y_true, y_pred, average="macro"),
+        "f1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
+        "f1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
+        "precision_macro": precision_score(y_true, y_pred, average="macro", zero_division=0),
+        "recall_macro": recall_score(y_true, y_pred, average="macro", zero_division=0),
     }
     if y_prob is not None:
         metrics[f"top_{k}_accuracy"] = top_k_accuracy_score(y_true, y_prob, k=k)

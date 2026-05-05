@@ -1,0 +1,73 @@
+{
+  "config": {
+    "data": {
+      "category": "Sports",
+      "min_caption_length": 10,
+      "max_caption_length": 100000,
+      "test_size": 0.15,
+      "val_size": 0.15,
+      "random_seed": 42,
+      "min_samples_per_class": 10,
+      "chunk_size": 3
+    },
+    "embedding": {
+      "model_name": "all-MiniLM-L6-v2",
+      "batch_size": 256,
+      "max_seq_length": 256,
+      "embedding_dim": 384
+    },
+    "model": {
+      "d_model": 384,
+      "nhead": 8,
+      "num_encoder_layers": 2,
+      "dim_feedforward": 256,
+      "dropout": 0.4,
+      "max_seq_len": 15
+    },
+    "training": {
+      "batch_size": 32,
+      "epochs": 50,
+      "learning_rate": 0.001,
+      "weight_decay": 0.01,
+      "warmup_steps": 500,
+      "patience": 200,
+      "class_weighting": "sqrt_inverse_frequency",
+      "checkpoint_metric": "f1_macro"
+    }
+  },
+  "training_variant": "transformer_weighted_sqrt_inverse_frequency_best_macro_f1",
+  "device": "cuda",
+  "num_classes": 4,
+  "class_names": [
+    "Individual Sports",
+    "Outdoor Recreation",
+    "Personal Fitness",
+    "Team Sports"
+  ],
+  "class_counts": {
+    "Individual Sports": 2892,
+    "Outdoor Recreation": 6197,
+    "Personal Fitness": 278,
+    "Team Sports": 1816
+  },
+  "class_weights": {
+    "Individual Sports": 0.648252546787262,
+    "Outdoor Recreation": 0.4428459107875824,
+    "Personal Fitness": 2.090841054916382,
+    "Team Sports": 0.818060576915741
+  },
+  "test_metrics": {
+    "accuracy": 0.8231122236128494,
+    "f1_macro": 0.7852075269695418,
+    "f1_weighted": 0.822675848399989,
+    "precision_macro": 0.8249193276096254,
+    "recall_macro": 0.7579695321640687,
+    "top_3_accuracy": 0.9920734251147267
+  },
+  "test_loss": 0.5626723695209139,
+  "best_val_macro_f1": 0.8008632953578273,
+  "best_val_acc": 0.8180300500834724,
+  "best_epoch": 30,
+  "epochs_trained": 50,
+  "total_params": 1680644
+}

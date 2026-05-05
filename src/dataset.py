@@ -4,9 +4,10 @@ import numpy as np
 
 
 class SportsEmbeddingDataset(Dataset):
-    def __init__(self, embeddings, labels, max_seq_len=20):
+    def __init__(self, embeddings, labels, seq_lens=None, max_seq_len=20):
         self.embeddings = embeddings
         self.labels = labels
+        self.seq_lens = seq_lens
         self.max_seq_len = max_seq_len
 
     def __len__(self):
@@ -16,11 +17,12 @@ class SportsEmbeddingDataset(Dataset):
         emb = self.embeddings[idx]
 
         if isinstance(emb, np.ndarray) and emb.ndim == 2:
-            seq_len = emb.shape[0]
-            if seq_len > self.max_seq_len:
+            original_len = int(self.seq_lens[idx]) if self.seq_lens is not None else emb.shape[0]
+            seq_len = min(original_len, self.max_seq_len)
+            if emb.shape[0] > self.max_seq_len:
                 emb = emb[:self.max_seq_len]
-            elif seq_len < self.max_seq_len:
-                pad = np.zeros((self.max_seq_len - seq_len, emb.shape[1]))
+            elif emb.shape[0] < self.max_seq_len:
+                pad = np.zeros((self.max_seq_len - emb.shape[0], emb.shape[1]))
                 emb = np.concatenate([emb, pad], axis=0)
             mask = torch.zeros(self.max_seq_len, dtype=torch.bool)
             mask[seq_len:] = True
