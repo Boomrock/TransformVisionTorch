@@ -1,128 +1,53 @@
 import torch
 import torch.nn as nn
 import math
-import timm
 
-class PatchEmbedding(nn.Module):
-    def __init__(self, image_size=224, patch_size=16, in_channels=3, dim=768):
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=512, dropout=0.1):
         super().__init__()
-        if image_size % patch_size != 0:
-            raise ValueError(f"Image size ({image_size}) must be divisible by patch size ({patch_size})")
-        
-        self.n_patches = (image_size // patch_size) ** 2
-        
-        self.projection = nn.Conv2d(
-            in_channels, 
-            dim, 
-            kernel_size=patch_size, 
-            stride=patch_size
-        )
+        self.dropout = nn.Dropout(p=dropout)
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer("pe", pe)
 
     def forward(self, x):
-        x = self.projection(x)
-        x = x.flatten(2)
-        x = x.transpose(1, 2)
-        return x
+        x = x + self.pe[:, :x.size(1)]
+        return self.dropout(x)
 
-class TransformerBlock(nn.Module):
-    def __init__(self, dim, heads=8, mlp_dim=3072, dropout=0.1):
+
+class TransformerClassifier(nn.Module):
+    def __init__(self, num_classes, d_model=384, nhead=6, num_encoder_layers=4,
+                 dim_feedforward=1024, dropout=0.1, max_seq_len=20):
         super().__init__()
-        self.norm1 = nn.LayerNorm(dim)
-        self.norm2 = nn.LayerNorm(dim)
-        
-        self.attn = nn.MultiheadAttention(
-            embed_dim=dim, 
-            num_heads=heads, 
-            dropout=dropout, 
-            batch_first=True
+        self.d_model = d_model
+        self.pos_encoder = PositionalEncoding(d_model, max_len=max_seq_len, dropout=dropout)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            batch_first=True,
         )
-        
-        self.mlp = nn.Sequential(
-            nn.Linear(dim, mlp_dim),
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_encoder_layers)
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, dim_feedforward),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(mlp_dim, dim),
-            nn.Dropout(dropout)
+            nn.Linear(dim_feedforward, num_classes),
         )
-        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        attn_out, _ = self.attn(self.norm1(x), self.norm1(x), self.norm1(x))
-        x = x + self.dropout(attn_out)
-
-        mlp_out = self.mlp(self.norm2(x))
-        x = x + mlp_out
-        
-        return x
-
-class ViT(nn.Module):
-    def __init__(
-        self, 
-        image_size=224, 
-        patch_size=16, 
-        in_channels=3, 
-        num_classes=1000, 
-        dim=768, 
-        depth=12, 
-        heads=12, 
-        mlp_dim=3072, 
-        dropout=0.1
-    ):
-        super().__init__()
-        
-        self.patch_embedding = PatchEmbedding(image_size, patch_size, in_channels, dim)
-        n_patches = self.patch_embedding.n_patches
-
-        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
-        self.pos_embedding = nn.Parameter(torch.randn(1, n_patches + 1, dim))
-        self.dropout = nn.Dropout(dropout)
-
-        self.transformer = nn.Sequential(*[
-            TransformerBlock(dim, heads, mlp_dim, dropout) for _ in range(depth)
-        ])
-
-        self.norm = nn.LayerNorm(dim)
-        self.head = nn.Linear(dim, num_classes)
-
-    def forward(self, x):
-        batch_size = x.shape[0]
-
-        x = self.patch_embedding(x)
-
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-
-        x = x + self.pos_embedding
-        x = self.dropout(x)
-
-        x = self.transformer(x)
-
-        x = self.norm(x[:, 0])
-
-        return self.head(x)
-
-
-def build_model(
-    model_name: str = "vit_base_patch16_224",
-    pretrained: bool = True,
-    num_classes: int = 120,
-    use_timm: bool = True,
-) -> nn.Module:
-    if use_timm:
-        model = timm.create_model(model_name, pretrained=pretrained, num_classes=num_classes)
-        tag = "pretrained" if pretrained else "timm architecture, random weights"
-        print(f"[model] {model_name} ({tag}), head -> {num_classes} classes")
-    else:
-        model = ViT(
-            image_size=224,
-            patch_size=16,
-            in_channels=3,
-            num_classes=num_classes,
-            dim=768,
-            depth=12,
-            heads=12,
-            mlp_dim=3072,
-            dropout=0.1,
-        )
-        print(f"[model] Built custom ViT from scratch, {num_classes} classes")
-    return model
+    def forward(self, src, src_key_padding_mask=None):
+        src = self.pos_encoder(src)
+        output = self.transformer_encoder(src, src_key_padding_mask=src_key_padding_mask)
+        if src_key_padding_mask is not None:
+            mask = ~src_key_padding_mask
+            output = (output * mask.unsqueeze(-1)).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1)
+        else:
+            output = output.mean(dim=1)
+        return self.classifier(output)

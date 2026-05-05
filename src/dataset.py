@@ -1,199 +1,37 @@
-from __future__ import annotations
-
-import json
-from pathlib import Path
-from typing import Dict, List, Tuple
-
-import numpy as np
 import torch
-from torch.utils.data import DataLoader, Subset
-from torchvision import transforms
-from torchvision.datasets import ImageFolder
-
-DATASET_URL = "https://www.kaggle.com/datasets/jessicali9530/stanford-dogs-dataset"
-NUM_CLASSES = 120
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
-
-_CANDIDATE_PATHS = [
-    "set/images/Images",
-    "set/Images",
-    "images/Images",
-    "Images",
-]
+from torch.utils.data import Dataset
+import numpy as np
 
 
-def find_images_dir(data_root: str | Path) -> Path:
-    data_root = Path(data_root)
+class SportsEmbeddingDataset(Dataset):
+    def __init__(self, embeddings, labels, max_seq_len=20):
+        self.embeddings = embeddings
+        self.labels = labels
+        self.max_seq_len = max_seq_len
 
-    for candidate in _CANDIDATE_PATHS:
-        path = data_root / candidate
-        if path.is_dir():
-            subdirs = [d for d in path.iterdir() if d.is_dir()]
-            if len(subdirs) >= 100:
-                print(f"[dataset] Found images at {path} ({len(subdirs)} breed folders)")
-                return path
-
-    raise FileNotFoundError(
-        f"Stanford Dogs images not found in {data_root}.\n"
-        f"Checked paths: {[str(data_root / c) for c in _CANDIDATE_PATHS]}\n\n"
-        f"Please download the dataset from:\n"
-        f"  {DATASET_URL}\n\n"
-        f"Then unzip into {data_root}/set/ so the structure is:\n"
-        f"  {data_root}/set/images/Images/<breed_folders>/\n"
-    )
-
-
-def create_splits(
-    dataset: ImageFolder,
-    splits_dir: str | Path,
-    ratios: Tuple[float, float, float] = (0.70, 0.15, 0.15),
-    seed: int = 42,
-) -> Dict[str, List[int]]:
-    splits_dir = Path(splits_dir)
-    splits_path = splits_dir / "splits.json"
-
-    if splits_path.exists():
-        print(f"[dataset] Loading existing splits from {splits_path}")
-        with open(splits_path, "r") as f:
-            return json.load(f)
-
-    assert abs(sum(ratios) - 1.0) < 1e-6, f"Ratios must sum to 1.0, got {sum(ratios)}"
-
-    rng = np.random.RandomState(seed)
-    targets = np.array(dataset.targets)
-    classes = np.unique(targets)
-
-    train_idx, val_idx, test_idx = [], [], []
-
-    for cls in classes:
-        cls_indices = np.where(targets == cls)[0]
-        rng.shuffle(cls_indices)
-
-        n = len(cls_indices)
-        n_train = int(n * ratios[0])
-        n_val = int(n * ratios[1])
-
-        train_idx.extend(cls_indices[:n_train].tolist())
-        val_idx.extend(cls_indices[n_train : n_train + n_val].tolist())
-        test_idx.extend(cls_indices[n_train + n_val :].tolist())
-
-    splits = {
-        "train": train_idx,
-        "val": val_idx,
-        "test": test_idx,
-    }
-
-    splits_dir.mkdir(parents=True, exist_ok=True)
-    with open(splits_path, "w") as f:
-        json.dump(splits, f)
-    print(
-        f"[dataset] Splits created — "
-        f"train: {len(train_idx)}, val: {len(val_idx)}, test: {len(test_idx)}"
-    )
-    return splits
-
-
-def get_transforms(image_size: int = 224) -> Dict[str, transforms.Compose]:
-    train_tf = transforms.Compose([
-        transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-        transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
-
-    eval_tf = transforms.Compose([
-        transforms.Resize(int(image_size * 256 / 224)),
-        transforms.CenterCrop(image_size),
-        transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
-
-    return {"train": train_tf, "val": eval_tf, "test": eval_tf}
-
-class TransformSubset(Subset):
-
-    def __init__(self, dataset: ImageFolder, indices: List[int], transform=None):
-        super().__init__(dataset, indices)
-        self.custom_transform = transform
+    def __len__(self):
+        return len(self.labels)
 
     def __getitem__(self, idx):
-        original_transform = self.dataset.transform
-        if self.custom_transform is not None:
-            self.dataset.transform = self.custom_transform
-        item = super().__getitem__(idx)
-        self.dataset.transform = original_transform
-        return item
+        emb = self.embeddings[idx]
 
-    def __getitems__(self, indices):
-        return [self[idx] for idx in indices]
+        if isinstance(emb, np.ndarray) and emb.ndim == 2:
+            seq_len = emb.shape[0]
+            if seq_len > self.max_seq_len:
+                emb = emb[:self.max_seq_len]
+            elif seq_len < self.max_seq_len:
+                pad = np.zeros((self.max_seq_len - seq_len, emb.shape[1]))
+                emb = np.concatenate([emb, pad], axis=0)
+            mask = torch.zeros(self.max_seq_len, dtype=torch.bool)
+            mask[seq_len:] = True
+        else:
+            emb = emb.reshape(1, -1)
+            emb = np.concatenate([emb, np.zeros((self.max_seq_len - 1, emb.shape[1]))], axis=0)
+            mask = torch.ones(self.max_seq_len, dtype=torch.bool)
+            mask[0] = False
 
-
-def get_mixup_fn(
-    mixup_alpha: float = 0.8,
-    cutmix_alpha: float = 0.0,
-    prob: float = 1.0,
-    num_classes: int = NUM_CLASSES,
-):
-    if mixup_alpha <= 0.0 and cutmix_alpha <= 0.0:
-        return None
-
-    from timm.data.mixup import Mixup
-
-    return Mixup(
-        mixup_alpha=mixup_alpha,
-        cutmix_alpha=cutmix_alpha,
-        prob=prob,
-        switch_prob=0.5 if cutmix_alpha > 0 else 0.0,
-        mode="batch",
-        num_classes=num_classes,
-    )
-
-def get_dataloaders(
-    data_root: str | Path,
-    splits_dir: str | Path,
-    image_size: int = 224,
-    batch_size: int = 32,
-    num_workers: int = 4,
-    seed: int = 42,
-) -> Dict[str, DataLoader]:
-    images_dir = find_images_dir(data_root)
-    full_dataset = ImageFolder(root=str(images_dir))
-    print(f"[dataset] Total images: {len(full_dataset)}, classes: {len(full_dataset.classes)}")
-
-    splits = create_splits(full_dataset, splits_dir, seed=seed)
-    tfms = get_transforms(image_size)
-
-    subsets = {
-        split: TransformSubset(full_dataset, indices, transform=tfms[split])
-        for split, indices in splits.items()
-    }
-
-    use_pin_memory = torch.cuda.is_available()
-    loaders = {}
-    for split, subset in subsets.items():
-        loaders[split] = DataLoader(
-            subset,
-            batch_size=batch_size,
-            shuffle=(split == "train"),
-            num_workers=num_workers,
-            pin_memory=use_pin_memory,
-            drop_last=(split == "train"),
-        )
-
-    return loaders
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Stanford Dogs dataset check")
-    parser.add_argument("--data-root", type=str, default="./data")
-    parser.add_argument("--splits-dir", type=str, default="./data/splits")
-    args = parser.parse_args()
-
-    loaders = get_dataloaders(args.data_root, args.splits_dir)
-
-    for name, loader in loaders.items():
-        images, labels = next(iter(loader))
-        print(f"  {name}: images {images.shape}, labels {labels.shape}")
+        return {
+            "embeddings": torch.tensor(emb, dtype=torch.float32),
+            "mask": mask,
+            "label": torch.tensor(self.labels[idx], dtype=torch.long),
+        }

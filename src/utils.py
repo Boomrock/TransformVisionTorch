@@ -1,117 +1,65 @@
-from __future__ import annotations
-
-import json
-import os
-import random
-from pathlib import Path
-from typing import Any, Dict, Optional
-
+import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
-import torch
-import torch.nn as nn
+from sklearn.metrics import (
+    accuracy_score, f1_score, precision_score, recall_score,
+    classification_report, confusion_matrix, top_k_accuracy_score,
+)
 
 
-def set_seed(seed: int = 42) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    print(f"[utils] Seed set to {seed}")
+def compute_metrics(y_true, y_pred, y_prob=None, k=3):
+    metrics = {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "f1_macro": f1_score(y_true, y_pred, average="macro"),
+        "f1_weighted": f1_score(y_true, y_pred, average="weighted"),
+        "precision_macro": precision_score(y_true, y_pred, average="macro"),
+        "recall_macro": recall_score(y_true, y_pred, average="macro"),
+    }
+    if y_prob is not None:
+        metrics[f"top_{k}_accuracy"] = top_k_accuracy_score(y_true, y_prob, k=k)
+    return metrics
 
 
-def get_device() -> torch.device:
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-    print(f"[utils] Using device: {device}")
-    return device
+def plot_confusion_matrix(y_true, y_pred, class_names, figsize=(12, 10)):
+    cm = confusion_matrix(y_true, y_pred)
+    cm_norm = cm.astype("float") / cm.sum(axis=1, keepdims=True)
+
+    fig, axes = plt.subplots(1, 2, figsize=(figsize[0] * 2, figsize[1]))
+
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=class_names, yticklabels=class_names, ax=axes[0])
+    axes[0].set_title("Confusion Matrix (counts)")
+    axes[0].set_xlabel("Predicted")
+    axes[0].set_ylabel("True")
+
+    sns.heatmap(cm_norm, annot=True, fmt=".2f", cmap="Blues",
+                xticklabels=class_names, yticklabels=class_names, ax=axes[1])
+    axes[1].set_title("Confusion Matrix (normalized)")
+    axes[1].set_xlabel("Predicted")
+    axes[1].set_ylabel("True")
+
+    plt.tight_layout()
+    return fig
 
 
-def save_checkpoint(
-    path: str | Path,
-    model: nn.Module,
-    optimizer: torch.optim.Optimizer,
-    epoch: int,
-    metrics: Dict[str, Any],
-) -> None:
-    """Сохраняет state_dict модели, оптимизатора и метрики"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "metrics": metrics,
-        },
-        str(path),
-    )
-    print(f"[utils] Checkpoint saved → {path}")
+def plot_training_history(train_losses, val_losses, train_accs, val_accs):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
+    ax1.plot(train_losses, label="Train Loss")
+    ax1.plot(val_losses, label="Val Loss")
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Loss")
+    ax1.set_title("Loss")
+    ax1.legend()
+    ax1.grid(True)
 
-def load_checkpoint(
-    path: str | Path,
-    model: nn.Module,
-    optimizer: Optional[torch.optim.Optimizer] = None,
-    device: torch.device = torch.device("cpu"),
-) -> Dict[str, Any]:
-    """Загружает чекпоинт и возвращает dict с epoch и метриками"""
-    ckpt = torch.load(str(path), map_location=device, weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
-    if optimizer is not None and "optimizer_state_dict" in ckpt:
-        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-    print(f"[utils] Checkpoint loaded ← {path} (epoch {ckpt.get('epoch', '?')})")
-    return ckpt
+    ax2.plot(train_accs, label="Train Accuracy")
+    ax2.plot(val_accs, label="Val Accuracy")
+    ax2.set_xlabel("Epoch")
+    ax2.set_ylabel("Accuracy")
+    ax2.set_title("Accuracy")
+    ax2.legend()
+    ax2.grid(True)
 
-
-def save_metrics(path: str | Path, metrics: Dict[str, Any]) -> None:
-    """Выгрузка метрик в JSON и перезаписывает файл"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(metrics, f, indent=2, ensure_ascii=False)
-    print(f"[utils] Metrics saved → {path}")
-
-
-def load_metrics(path: str | Path) -> Dict[str, Any]:
-    """Загружает метрики из JSON"""
-    with open(path, "r") as f:
-        return json.load(f)
-
-
-class AverageMeter:
-    """
-    Считает скользящее среднее и сумму
-
-    Использовать как
-
-        meter = AverageMeter("loss")
-        for batch in loader:
-            ...
-            meter.update(loss_val, n=batch_size)
-        print(meter)
-    """
-
-    def __init__(self, name: str = "metric"):
-        self.name = name
-        self.reset()
-
-    def reset(self):
-        self.val = 0.0
-        self.avg = 0.0
-        self.sum = 0.0
-        self.count = 0
-
-    def update(self, val: float, n: int = 1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-    def __repr__(self) -> str:
-        return f"{self.name}: {self.avg:.4f}"
+    plt.tight_layout()
+    return fig

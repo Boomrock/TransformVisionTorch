@@ -1,0 +1,31 @@
+data:
+  category: "Sports"
+  min_caption_length: 10
+  max_caption_length: 100000
+  test_size: 0.15
+  val_size: 0.15
+  random_seed: 42
+  min_samples_per_class: 10
+  chunk_size: 3
+
+embedding:
+  model_name: "all-MiniLM-L6-v2"
+  batch_size: 256
+  max_seq_length: 256
+  embedding_dim: 128
+
+model:
+  d_model: 384
+  nhead: 4
+  num_encoder_layers: 2
+  dim_feedforward: 256
+  dropout: 0.2
+  max_seq_len: 15
+
+training:
+  batch_size: 16
+  epochs: 30
+  learning_rate: 0.003
+  weight_decay: 0.01
+  warmup_steps: 500
+  patience: 200
